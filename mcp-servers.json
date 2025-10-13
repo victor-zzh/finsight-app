@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "akshare": {
+      "command": "python3",
+      "args": ["-u", "server.py"],
+      "cwd": "./mcp-servers/akshare-mcp",
+      "env": {
+        "PYTHONUNBUFFERED": "1",
+        "PYTHONIOENCODING": "utf-8"
+      }
+    }
+  }
+}
