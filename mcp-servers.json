@@ -1,7 +1,7 @@
 {
   "mcpServers": {
     "akshare": {
-      "command": "python3",
+      "command": "./mcp-servers/akshare-mcp/venv/bin/python",
       "args": ["-u", "server.py"],
       "cwd": "./mcp-servers/akshare-mcp",
       "env": {

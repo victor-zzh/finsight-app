@@ -65,6 +65,8 @@ export const ModelPicker = ({
         return <Sparkles className="h-3 w-3 text-blue-500" />;
       case "xai":
         return <Sparkles className="h-3 w-3 text-yellow-500" />;
+      case "glm":
+        return <Sparkles className="h-3 w-3 text-emerald-500" />;
       default:
         return <Info className="h-3 w-3 text-blue-500" />;
     }

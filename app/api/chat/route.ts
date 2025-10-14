@@ -46,6 +46,25 @@ export async function POST(req: Request) {
 
   const id = chatId || nanoid();
 
+  const normalizedMessages: UIMessage[] = messages.map((message) => {
+    if (Array.isArray(message.parts) && message.parts.length > 0) {
+      return message;
+    }
+
+    const rawContent = typeof message.content === 'string'
+      ? message.content
+      : Array.isArray((message as any).content)
+        ? (message as any).content.join('\n')
+        : '';
+
+    return {
+      ...message,
+      parts: rawContent
+        ? [{ type: 'text', text: rawContent }]
+        : [],
+    } satisfies UIMessage;
+  });
+
   // 🔄 Database operations disabled - Real-time analysis mode
   // Chat history is not saved to database for now
   console.log("💡 Real-time analysis mode: Database operations skipped");
@@ -109,16 +128,26 @@ export async function POST(req: Request) {
       
       // Convert config format to MCPServerConfig[]
       if (mcpConfig.mcpServers) {
-        Object.entries(mcpConfig.mcpServers).forEach(([name, config]: [string, any]) => {
-          allMCPServers.push({
-            type: 'stdio',
-            command: config.command,
-            args: config.args,
-            cwd: path.join(process.cwd(), config.cwd),
-            env: config.env
-          });
+        Object.values(mcpConfig.mcpServers).forEach((config: any) => {
+          const resolvedCommand = config.command
+            ? (path.isAbsolute(config.command)
+              ? config.command
+              : (config.command.startsWith('.') || config.command.includes(path.sep)
+                ? path.join(process.cwd(), config.command)
+                : config.command))
+            : undefined;
+
+          if (resolvedCommand) {
+            allMCPServers.push({
+              type: 'stdio',
+              command: resolvedCommand,
+              args: config.args,
+              cwd: config.cwd ? path.join(process.cwd(), config.cwd) : undefined,
+              env: config.env
+            });
+          }
         });
-        
+
         console.log(`✅ Loaded ${Object.keys(mcpConfig.mcpServers).length} MCP server(s) from config file`);
       }
     }
@@ -130,15 +159,15 @@ export async function POST(req: Request) {
   // Initialize MCP clients (both HTTP/SSE and STDIO)
   const { tools, cleanup } = await initializeMCPClients(allMCPServers, req.signal);
 
-  console.log("messages", messages);
-  console.log("parts", messages.map(m => m.parts.map(p => p)));
+  console.log("messages", normalizedMessages);
+  console.log("parts", normalizedMessages.map((m) => m.parts.map((p) => p)));
 
   // Track if the response has completed
   let responseCompleted = false;
 
   // Build enhanced system prompt based on available tools
   const hasAShareTools = Object.keys(tools).some(key => 
-    ['get_stock_info', 'get_financial_report', 'search_stock_by_name'].includes(key)
+    ['get_stock_info', 'get_financial_report', 'search_stock_by_name', 'analyze_company'].includes(key)
   );
 
   const systemPrompt = hasAShareTools ? 
@@ -150,15 +179,17 @@ export async function POST(req: Request) {
 
 你可以使用以下工具实时查询A股数据：
 
-1. **search_stock_by_name** - 根据公司名称搜索股票代码
-2. **get_stock_info** - 获取股票基本信息（6位代码）
-3. **get_financial_report** - 获取财务报表（利润表/资产负债表/现金流量表）
-4. **get_financial_indicators** - 获取多年度财务指标（ROE、毛利率等）
-5. **get_st_list** - 获取ST股票列表
+1. **analyze_company** - 输入公司名称或股票代码，自动完成代码匹配、基本面、财务报表与指标合集。
+2. **search_stock_by_name** - 根据公司名称搜索股票代码
+3. **get_stock_info** - 获取股票基本信息（6位代码）
+4. **get_financial_report** - 获取财务报表（利润表/资产负债表/现金流量表）
+5. **get_financial_indicators** - 获取多年度财务指标（ROE、毛利率等）
+6. **get_st_list** - 获取ST股票列表
 
 ## 使用规则
 
-- 用户提到公司名称时，先用 search_stock_by_name 查代码
+- 优先尝试使用 analyze_company 快速获取综合结果
+- 如需更精细控制，可先用 search_stock_by_name 查代码，再调用其他工具
 - 使用Markdown表格展示数据
 - 风险点用 ⚠️ 标记，正向用 ✅
 - 标注数据来源和免责声明
@@ -190,7 +221,7 @@ Use the tools to answer questions. Multiple tools can be used in a single respon
   const result = streamText({
     model: model.languageModel(selectedModel),
     system: systemPrompt,
-    messages,
+    messages: normalizedMessages,
     tools,
     maxSteps: 20,
     providerOptions: {
